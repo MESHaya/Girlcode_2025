@@ -10,6 +10,12 @@ from models.detector import DeepfakeDetector
 from utils.video_processor import VideoProcessor
 import config
 from utils.audio_processor import AudioExtractor
+from utils.url_handler import URLHandler
+from utils.document_processor import DocumentProcessor
+from models.text_detector import TextAIDetector
+from pydantic import BaseModel
+from utils.language_handler import LanguageHandler
+from utils.multilingual_helper import MultilingualHelper
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -31,15 +37,42 @@ app.add_middleware(
 detector = None
 video_processor = None
 
+url_handler = None
+document_processor = None
+text_detector = None
+
+class URLRequest(BaseModel):
+    url: str
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize models when server starts"""
-    global detector, video_processor, audio_extractor
+    global detector, video_processor, audio_extractor, url_handler, document_processor, text_detector, language_handler, multilingual_helper
+    
     print("Starting up API server...")
+    
+    # Load models
     detector = DeepfakeDetector()
     video_processor = VideoProcessor(frame_sample_rate=config.FRAME_SAMPLE_RATE)
-    audio_extractor = AudioExtractor(output_dir=str(config.UPLOAD_FOLDER / "audio"))  
-    print("API ready!")
+    audio_extractor = AudioExtractor(output_dir=str(config.UPLOAD_FOLDER / "audio"))
+    url_handler = URLHandler(download_dir=str(config.UPLOAD_FOLDER / "downloads"))
+    document_processor = DocumentProcessor()
+    text_detector = TextAIDetector()
+    language_handler = LanguageHandler()
+    multilingual_helper = MultilingualHelper()
+    
+    # Pre-generate translations for South African languages (optional but recommended)
+    # This happens in the background and caches translations
+    print("\n Preparing multilingual support...")
+    try:
+        # Only pre-generate for SA languages to save time
+        sa_languages = ['zu', 'xh', 'st', 'af', 'nso', 'tn']
+        multilingual_helper.pre_generate_translations(sa_languages)
+    except Exception as e:
+        print(f" Could not pre-generate translations: {e}")
+        print("Translations will be generated on-demand")
+    
+    print("\n API ready with multilingual support!")
 
 @app.get("/")
 async def root():
@@ -298,6 +331,245 @@ async def detect_video_with_audio(file: UploadFile = File(...)):
     
     except Exception as e:
         # Clean up temp files
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/detect-video-url")
+async def detect_video_from_url(request: URLRequest):
+    """
+    Detect AI-generated content from video URL
+    Supports: YouTube, TikTok, Instagram, direct video links, etc.
+    """
+    temp_path = None
+    
+    try:
+        url = request.url
+        print(f"📥 Processing video from URL: {url}")
+        
+        # Download video from URL
+        download_result = url_handler.download_from_url(url)
+        
+        if not download_result['success']:
+            raise HTTPException(
+                status_code=400,
+                detail=download_result.get('message', 'Failed to download video')
+            )
+        
+        temp_path = download_result['filepath']
+        
+        # Get video info
+        video_info = video_processor.get_video_info(temp_path)
+        
+        # Extract and analyze frames
+        frames = video_processor.extract_frames(
+            temp_path,
+            max_frames=config.MAX_FRAMES_TO_ANALYZE
+        )
+        detection_result = detector.analyze_video(frames)
+        
+        # Try to extract audio
+        has_audio = audio_extractor.check_has_audio(temp_path)
+        audio_result = None
+        audio_info_dict = {}
+        
+        if has_audio:
+            try:
+                audio_result = audio_extractor.extract_audio(temp_path)
+                if audio_result['success']:
+                    audio_info_dict = audio_extractor.get_audio_info(audio_result['audio_path'])
+            except Exception as audio_error:
+                print(f"⚠️ Audio extraction failed: {audio_error}")
+                has_audio = False
+        
+        # Clean up downloaded video
+        url_handler.cleanup(temp_path)
+        
+        # Prepare response
+        response = {
+            "success": True,
+            "source": "url",
+            "url": url,
+            "download_info": {
+                "platform": download_result.get('platform', 'Unknown'),
+                "title": download_result.get('title', 'Unknown'),
+                "size_mb": download_result.get('size_mb', 0)
+            },
+            "video_info": {
+                "duration_seconds": round(video_info["duration"], 2),
+                "fps": round(video_info["fps"], 2),
+                "resolution": f"{video_info['width']}x{video_info['height']}"
+            },
+            "detection_result": {
+                "is_ai_generated": detection_result["is_ai_generated"],
+                "confidence_score": detection_result["confidence_score"],
+                "frames_analyzed": detection_result["frames_analyzed"]
+            },
+            "audio_info": {
+                "has_audio": has_audio,
+                "extracted": audio_result['success'] if audio_result else False
+            }
+        }
+        
+        if has_audio and audio_result and audio_result['success']:
+            response["audio_info"].update({
+                "duration_seconds": round(audio_info_dict.get("duration", 0), 2),
+                "sample_rate": audio_info_dict.get("sample_rate", 0)
+            })
+        
+        return JSONResponse(content=response)
+    
+    except Exception as e:
+        if temp_path and os.path.exists(temp_path):
+            url_handler.cleanup(temp_path)
+        
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/detect-document-url")
+async def detect_document_from_url(request: URLRequest):
+    """
+    Detect AI-generated text from document URL
+    Supports: PDF, DOCX, TXT files
+    """
+    temp_path = None
+    
+    try:
+        url = request.url
+        print(f"📥 Processing document from URL: {url}")
+        
+        # Download document from URL
+        download_result = url_handler.download_from_url(url)
+        
+        if not download_result['success']:
+            raise HTTPException(
+                status_code=400,
+                detail=download_result.get('message', 'Failed to download document')
+            )
+        
+        temp_path = download_result['filepath']
+        
+        # Extract text from document
+        extraction_result = document_processor.extract_text(temp_path)
+        
+        if not extraction_result['success']:
+            raise HTTPException(
+                status_code=400,
+                detail=extraction_result.get('message', 'Failed to extract text')
+            )
+        
+        # Chunk text for analysis
+        text_chunks = document_processor.chunk_text(extraction_result['text'])
+        
+        # Analyze with AI detector
+        detection_result = text_detector.analyze_document(text_chunks)
+        
+        # Clean up downloaded file
+        url_handler.cleanup(temp_path)
+        
+        # Prepare response
+        response = {
+            "success": True,
+            "source": "url",
+            "url": url,
+            "document_info": {
+                "filename": extraction_result['filename'],
+                "file_type": extraction_result['file_type'],
+                "word_count": extraction_result['word_count'],
+                "character_count": extraction_result['character_count'],
+                "sentence_count": extraction_result['sentence_count']
+            },
+            "detection_result": {
+                "is_ai_generated": detection_result["is_ai_generated"],
+                "confidence_score": detection_result["confidence_score"],
+                "chunks_analyzed": detection_result["chunks_analyzed"]
+            },
+            "detailed_analysis": {
+                "avg_ai_probability": detection_result["avg_ai_probability"],
+                "avg_human_probability": detection_result["avg_human_probability"]
+            }
+        }
+        
+        return JSONResponse(content=response)
+    
+    except Exception as e:
+        if temp_path and os.path.exists(temp_path):
+            url_handler.cleanup(temp_path)
+        
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/detect-document")
+async def detect_document(file: UploadFile = File(...)):
+    """
+    Detect AI-generated text from uploaded document
+    Supports: PDF, DOCX, TXT files
+    """
+    try:
+        # Validate file extension
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in ['.pdf', '.docx', '.doc', '.txt']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: .pdf, .docx, .txt"
+            )
+        
+        # Save uploaded file temporarily
+        timestamp = int(time.time())
+        temp_filename = f"document_{timestamp}{file_ext}"
+        temp_path = config.UPLOAD_FOLDER / temp_filename
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        print(f"Processing document: {temp_filename}")
+        
+        # Extract text
+        extraction_result = document_processor.extract_text(str(temp_path))
+        
+        if not extraction_result['success']:
+            os.remove(temp_path)
+            raise HTTPException(
+                status_code=400,
+                detail=extraction_result.get('message', 'Failed to extract text')
+            )
+        
+        # Chunk text for analysis
+        text_chunks = document_processor.chunk_text(extraction_result['text'])
+        
+        # Analyze with AI detector
+        detection_result = text_detector.analyze_document(text_chunks)
+        
+        # Clean up temp file
+        os.remove(temp_path)
+        
+        # Prepare response
+        response = {
+            "success": True,
+            "document_info": {
+                "filename": file.filename,
+                "file_type": file_ext,
+                "word_count": extraction_result['word_count'],
+                "character_count": extraction_result['character_count'],
+                "sentence_count": extraction_result['sentence_count']
+            },
+            "detection_result": {
+                "is_ai_generated": detection_result["is_ai_generated"],
+                "confidence_score": detection_result["confidence_score"],
+                "chunks_analyzed": detection_result["chunks_analyzed"]
+            },
+            "detailed_analysis": {
+                "avg_ai_probability": detection_result["avg_ai_probability"],
+                "avg_human_probability": detection_result["avg_human_probability"]
+            }
+        }
+        
+        return JSONResponse(content=response)
+    
+    except Exception as e:
         if 'temp_path' in locals() and os.path.exists(temp_path):
             os.remove(temp_path)
         

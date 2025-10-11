@@ -9,3 +9,11 @@ pillow==11.0.0
 numpy==2.1.0
 python-dotenv==1.0.1
 ffmpeg-python==0.2.0
+requests==2.31.0
+yt-dlp==2024.8.6
+PyPDF2==3.0.1
+python-docx==1.1.0
+validators==0.22.0
+langdetect==1.0.9
+deep-translator==1.11.4
+sentencepiece==0.1.99
