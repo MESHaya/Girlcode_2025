@@ -44,11 +44,34 @@ class DeepfakeDetector:
         # Get probabilities
         probs = probabilities[0].cpu().numpy()
         
-        # Assuming model outputs [fake, real] probabilities
+        # DEBUG: Print model labels to verify order
+        print(f"🔍 Model config labels: {self.model.config.id2label}")
+        print(f"🔍 Raw probabilities: {probs}")
+        
+        # Check the actual label mapping
+        # The model should tell us which index is fake vs real
+        if hasattr(self.model.config, 'id2label'):
+            label_0 = self.model.config.id2label[0].lower()
+            label_1 = self.model.config.id2label[1].lower()
+            
+            # Correctly assign based on actual labels
+            if 'fake' in label_0:
+                fake_prob = float(probs[0])
+                real_prob = float(probs[1])
+            else:  # 'fake' is in label_1
+                fake_prob = float(probs[1])
+                real_prob = float(probs[0])
+        else:
+            # Fallback: assume [fake, real] order
+            fake_prob = float(probs[0])
+            real_prob = float(probs[1])
+        
         result = {
-            "fake_probability": float(probs[0]),
-            "real_probability": float(probs[1])
+            "fake_probability": fake_prob,
+            "real_probability": real_prob
         }
+        
+        print(f"📊 Result: Fake={fake_prob:.2%}, Real={real_prob:.2%}")
         
         return result
     
@@ -85,3 +108,53 @@ class DeepfakeDetector:
             "frames_analyzed": len(frames),
             "frame_results": results
         }
+    
+    def analyze_image(self, image_path: str) -> Dict:
+        """
+        Analyze a single image for AI generation
+        Args:
+            image_path: Path to image file
+        Returns:
+            Dictionary with detection results
+        """
+        try:
+            print(f"🖼️ Analyzing image: {image_path}")
+            
+            # Load image
+            img = Image.open(image_path)
+            
+            # Convert to RGB if needed
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Convert to numpy array for detect_frame
+            img_array = np.array(img)
+            print(f"✓ Image loaded: {img_array.shape}")
+            
+            # Use existing detect_frame method
+            result = self.detect_frame(img_array)
+            
+            fake_prob = result['fake_probability']
+            real_prob = result['real_probability']
+            
+            # Determine if AI-generated (threshold: 0.5)
+            is_ai = fake_prob > 0.5
+            confidence = fake_prob if is_ai else real_prob
+            
+            detection_result = {
+                "is_ai_generated": bool(is_ai),
+                "confidence_score": round(confidence * 100, 2),
+                "fake_probability": round(fake_prob * 100, 2),
+                "real_probability": round(real_prob * 100, 2),
+                "analysis_type": "single_image"
+            }
+            
+            print(f"✓ Analysis complete: {'AI' if is_ai else 'Human'} ({confidence*100:.1f}%)")
+            
+            return detection_result
+            
+        except Exception as e:
+            print(f"❌ Error analyzing image: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise

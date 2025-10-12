@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <script src="Main.js" defer></script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Auraven — AI Content Detection</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="Main.css">
+    
+
+
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-left">
+           
+        </div>
+        <div class="header-center"></div>
+            <div class="brand-title">Auraven</div>
+            <div class="brand-sub">AI Content Detection</div>
+            <div class="progress-bar-placeholder">
+                <div class="progress-dots">
+                    <span class="dot active"></span><span class="dot active"></span><span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="lang-select">
+                <button id="langBtn" class="lang-btn">
+                    <span class="icon">🌐</span> English <span class="caret">▾</span>
+                </button>
+                <ul id="langMenu" class="lang-menu" aria-hidden="true">
+                    <li class="lang-item">English</li>
+                    <li class="lang-item">isiZulu</li>
+                    <li class="lang-item">isiXhosa</li>
+                    <li class="lang-item">Sesotho</li>
+                </ul>
+            </div>
+        </div>
+    </header>
+    
+    <main class="page-content">
+        <div class="pink-bg-area">
+            <section class="hero">
+                <button class="protect-btn">
+                    <span class="icon">◎</span> Protect yourself from AI-generated content
+                </button>
+                <p class="hero-desc">Analyze text, images, and videos to detect AI-generated content. Get education and insights to protect yourself from misinformation and scams.</p>
+            </section>
+        </div>
+
+        <section class="panel-container">
+            <div class="panel">
+                <div class="input-tabs">
+                    <button class="tab" data-tab="text"><span class="icon">📄</span> Text</button>
+                    <button class="tab" data-tab="image"><span class="icon">🖼️</span> Image</button>
+                    <button class="tab active" data-tab="video"><span class="icon">📹</span> Video</button>
+                </div>
+                
+                <div class="uploader active" id="uploader">
+                    <div class="drop-area video-selected" id="dropArea">
+                        <input id="fileInput" type="file" accept="image/*,video/*" />
+                        <div class="drop-inner">
+                            <div class="file-preview" id="filePreview">
+                                <div class="file-icon">
+                                    <span class="icon">📹</span>
+                                </div>
+                                <div class="file-name" id="fileName">IMG_0650.MOV</div>
+                                <div class="file-sub">File selected</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="actions">
+                        <button id="checkBtn" class="check-btn">Check Content</button>
+                        <button id="clearBtn" class="clear-btn">✕</button>
+                    </div>
+                </div>
+
+                <div class="results" id="results">
+                    <h3 class="results-title">Detection Results</h3>
+                    
+                    <div class="result-card human-result" id="resultCard">
+                        <div class="result-left">
+                            <div class="status-icon" id="statusIcon">
+                                <span class="icon">✓</span>
+                            </div>
+                        </div>
+                        <div class="result-right">
+                            <div class="result-heading" id="resultHeading">
+                                Likely Human-Created <span class="badge" id="confidenceBadge">Confidence: 91%</span>
+                            </div>
+                            <div class="result-desc" id="resultDesc">
+                                The video displays natural motion, consistent lighting across frames, and authentic audio synchronization.
+                            </div>
+                            <div class="progress-wrap">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill" style="width:0%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="accordion" id="acc1">
+                        <button class="acc-header">
+                            <span class="header-icon-wrap info-icon-wrap"><span class="header-icon">i</span></span>
+                            What You Can Do <span class="acc-symbol">^</span>
+                        </button>
+                        <div class="acc-body">
+                            <ul class="check-list">
+                                <li>This appears human-created, but always verify important information</li>
+                                <li>Check for updated information from the original source</li>
+                                <li>Consider the context and timing of the content</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="accordion" id="acc2">
+                        <button class="acc-header">
+                            <span class="header-icon-wrap lightbulb-icon-wrap"><span class="header-icon">💡</span></span>
+                            How to Spot AI Content <span class="acc-symbol">^</span>
+                        </button>
+                        <div class="acc-body show">
+                            <ul class="bullet-list">
+                                <li>AI-generated images often have distorted hands, faces, or text</li>
+                                <li>Deepfake videos may show unnatural blinking or lip sync issues</li>
+                                <li>AI text tends to be overly formal or lack personal anecdotes</li>
+                                <li>Check metadata – AI content often lacks proper EXIF data</li>
+                                <li>Trust your instincts – if something feels off, investigate further</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+        
+        <div class="page-footer-ornament">
+            <div class="progress-dots">
+                <span class="dot active"></span><span class="dot active"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            </div>
+        </div>
+    </main>
+    
+    <footer class="site-footer">
+        <div class="footer-pill">
+            <span class="icon">◎</span> Protecting South African communities from digital deception
+        </div>
+    </footer> 
+    
+
+</body>
+</html>

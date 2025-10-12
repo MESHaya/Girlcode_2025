@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException,Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -16,6 +16,10 @@ from models.text_detector import TextAIDetector
 from pydantic import BaseModel
 from utils.language_handler import LanguageHandler
 from utils.multilingual_helper import MultilingualHelper
+from utils.auto_translator import AutoTranslator
+from utils.image_processor import ImageProcessor
+
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -47,7 +51,7 @@ class URLRequest(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """Initialize models when server starts"""
-    global detector, video_processor, audio_extractor, url_handler, document_processor, text_detector, language_handler, multilingual_helper
+    global detector, video_processor, audio_extractor, url_handler, document_processor, text_detector, language_handler, multilingual_helper,image_processor
     
     print("Starting up API server...")
     
@@ -60,7 +64,8 @@ async def startup_event():
     text_detector = TextAIDetector()
     language_handler = LanguageHandler()
     multilingual_helper = MultilingualHelper()
-    
+    image_processor = ImageProcessor() 
+
     # Pre-generate translations for South African languages (optional but recommended)
     # This happens in the background and caches translations
     print("\n Preparing multilingual support...")
@@ -241,12 +246,14 @@ async def extract_audio(file: UploadFile = File(...)):
         
         print(f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 
 @app.post("/api/detect-with-audio")
-async def detect_video_with_audio(file: UploadFile = File(...)):
-    """
-    Enhanced endpoint: Detect AI-generated video AND extract audio (if present)
-    """
+async def detect_video_with_audio(
+    file: UploadFile = File(...), 
+    language: str = Query(default='en')
+):
+    """Enhanced endpoint: Detect AI-generated video with multilingual support"""
     try:
         # Validate file extension
         file_ext = Path(file.filename).suffix.lower()
@@ -264,19 +271,19 @@ async def detect_video_with_audio(file: UploadFile = File(...)):
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        print(f"Processing video with audio extraction: {temp_filename}")
+        print(f"Processing video: {temp_filename} (Language: {language})")
         
-        # 1. Get video info
+        # Get video info
         video_info = video_processor.get_video_info(str(temp_path))
         
-        # 2. Extract and analyze frames (video detection)
+        # Extract and analyze frames
         frames = video_processor.extract_frames(
             str(temp_path),
             max_frames=config.MAX_FRAMES_TO_ANALYZE
         )
         detection_result = detector.analyze_video(frames)
         
-        # 3. Try to extract audio (may not exist)
+        # Try to extract audio
         has_audio = audio_extractor.check_has_audio(str(temp_path))
         audio_result = None
         audio_info_dict = {}
@@ -293,7 +300,14 @@ async def detect_video_with_audio(file: UploadFile = File(...)):
         # Clean up temp video file
         os.remove(temp_path)
         
-        # Prepare comprehensive response
+        # Format with multilingual support
+        formatted_result = multilingual_helper.format_full_response(
+            detection_result,
+            language=language,
+            include_warnings=True
+        )
+        
+        # Prepare response
         response = {
             "success": True,
             "video_info": {
@@ -303,8 +317,13 @@ async def detect_video_with_audio(file: UploadFile = File(...)):
                 "resolution": f"{video_info['width']}x{video_info['height']}"
             },
             "detection_result": {
-                "is_ai_generated": detection_result["is_ai_generated"],
-                "confidence_score": detection_result["confidence_score"],
+                "is_ai_generated": formatted_result["is_ai_generated"],
+                "confidence_score": formatted_result["confidence_score"],
+                "message": formatted_result["message"],
+                "confidence_label": formatted_result["confidence_label"],
+                "warning": formatted_result.get("warning", ""),
+                "language": formatted_result["language"],
+                "language_name": formatted_result["language_name"],
                 "frames_analyzed": detection_result["frames_analyzed"]
             },
             "audio_info": {
@@ -330,12 +349,173 @@ async def detect_video_with_audio(file: UploadFile = File(...)):
         return JSONResponse(content=response)
     
     except Exception as e:
-        # Clean up temp files
         if 'temp_path' in locals() and os.path.exists(temp_path):
             os.remove(temp_path)
         
         print(f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/detect-image")
+async def detect_image(
+    file: UploadFile = File(...), 
+    language: str = Query(default='en')
+):
+    """Detect if an uploaded image is AI-generated with multilingual support"""
+    try:
+        file_ext = Path(file.filename).suffix.lower()
+        allowed_image_formats = ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
+        
+        if file_ext not in allowed_image_formats:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_image_formats)}"
+            )
+        
+        timestamp = int(time.time())
+        temp_filename = f"image_{timestamp}{file_ext}"
+        temp_path = config.UPLOAD_FOLDER / temp_filename
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        print(f"Processing image: {temp_filename} (Language: {language})")
+        
+        # Analyze image
+        detection_result = detector.analyze_image(str(temp_path))
+        
+        # Get image info
+        from PIL import Image
+        with Image.open(temp_path) as img:
+            width, height = img.size
+            format_name = img.format
+            file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
+        
+        os.remove(temp_path)
+        
+        # Format with multilingual support
+        formatted_result = multilingual_helper.format_full_response(
+            detection_result,
+            language=language,
+            include_warnings=True
+        )
+        
+        response = {
+            "success": True,
+            "image_info": {
+                "filename": file.filename,
+                "resolution": f"{width}x{height}",
+                "format": format_name,
+                "size_mb": round(file_size_mb, 2)
+            },
+            "detection_result": {
+                "is_ai_generated": formatted_result["is_ai_generated"],
+                "confidence_score": formatted_result["confidence_score"],
+                "message": formatted_result["message"],
+                "confidence_label": formatted_result["confidence_label"],
+                "warning": formatted_result.get("warning", ""),
+                "language": formatted_result["language"],
+                "language_name": formatted_result["language_name"],
+                "analysis_type": detection_result["analysis_type"]
+            },
+            "detailed_analysis": {
+                "fake_probability": detection_result["fake_probability"],
+                "real_probability": detection_result["real_probability"]
+            }
+        }
+        
+        return JSONResponse(content=response)
+    
+    except Exception as e:
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/detect-document")
+async def detect_document(
+    file: UploadFile = File(...), 
+    language: str = Query(default='en')
+):
+    """Detect AI-generated text from uploaded document with multilingual support"""
+    try:
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in ['.pdf', '.docx', '.doc', '.txt']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: .pdf, .docx, .txt"
+            )
+        
+        timestamp = int(time.time())
+        temp_filename = f"document_{timestamp}{file_ext}"
+        temp_path = config.UPLOAD_FOLDER / temp_filename
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        print(f"Processing document: {temp_filename} (Language: {language})")
+        
+        # Extract text
+        extraction_result = document_processor.extract_text(str(temp_path))
+        
+        if not extraction_result['success']:
+            os.remove(temp_path)
+            raise HTTPException(
+                status_code=400,
+                detail=extraction_result.get('message', 'Failed to extract text')
+            )
+        
+        # Chunk text for analysis
+        text_chunks = document_processor.chunk_text(extraction_result['text'])
+        
+        # Analyze with AI detector
+        detection_result = text_detector.analyze_document(text_chunks)
+        
+        os.remove(temp_path)
+        
+        # Format with multilingual support
+        formatted_result = multilingual_helper.format_full_response(
+            detection_result,
+            language=language,
+            include_warnings=True
+        )
+        
+        response = {
+            "success": True,
+            "document_info": {
+                "filename": file.filename,
+                "file_type": file_ext,
+                "word_count": extraction_result['word_count'],
+                "character_count": extraction_result['character_count'],
+                "sentence_count": extraction_result['sentence_count']
+            },
+            "detection_result": {
+                "is_ai_generated": formatted_result["is_ai_generated"],
+                "confidence_score": formatted_result["confidence_score"],
+                "message": formatted_result["message"],
+                "confidence_label": formatted_result["confidence_label"],
+                "warning": formatted_result.get("warning", ""),
+                "language": formatted_result["language"],
+                "language_name": formatted_result["language_name"],
+                "chunks_analyzed": detection_result["chunks_analyzed"]
+            },
+            "detailed_analysis": {
+                "avg_ai_probability": detection_result["avg_ai_probability"],
+                "avg_human_probability": detection_result["avg_human_probability"]
+            }
+        }
+        
+        return JSONResponse(content=response)
+    
+    except Exception as e:
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @app.post("/api/detect-video-url")
 async def detect_video_from_url(request: URLRequest):
     """
@@ -559,6 +739,309 @@ async def detect_document(file: UploadFile = File(...)):
             "detection_result": {
                 "is_ai_generated": detection_result["is_ai_generated"],
                 "confidence_score": detection_result["confidence_score"],
+                "chunks_analyzed": detection_result["chunks_analyzed"]
+            },
+            "detailed_analysis": {
+                "avg_ai_probability": detection_result["avg_ai_probability"],
+                "avg_human_probability": detection_result["avg_human_probability"]
+            }
+        }
+        
+        return JSONResponse(content=response)
+    
+    except Exception as e:
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Add these endpoints to your app.py file (after the existing endpoints)
+# ============================================
+# LANGUAGE & TRANSLATION ENDPOINTS
+# ============================================
+
+@app.get("/api/languages")
+async def get_supported_languages():
+    """Get list of all supported languages"""
+    try:
+        languages = multilingual_helper.get_supported_languages()
+        return JSONResponse(content={
+            "success": True,
+            "languages": languages,
+            "total": len(languages)
+        })
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/translations/{language}")
+async def get_translations(language: str):
+    """Get all UI translations for a specific language"""
+    try:
+        if not multilingual_helper.validate_language_code(language):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported language: {language}"
+            )
+        
+        translations = multilingual_helper.get_all_translations(language)
+        
+        return JSONResponse(content={
+            "success": True,
+            "language": language,
+            "translations": translations
+        })
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Update the video detection endpoint to support language parameter
+@app.post("/api/detect-with-audio")
+async def detect_video_with_audio(file: UploadFile = File(...), language: str = 'en'):
+    """Enhanced endpoint: Detect AI-generated video with multilingual support"""
+    try:
+        # Validate file extension
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in config.ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(config.ALLOWED_EXTENSIONS)}"
+            )
+        
+        # Save uploaded file temporarily
+        timestamp = int(time.time())
+        temp_filename = f"video_{timestamp}{file_ext}"
+        temp_path = config.UPLOAD_FOLDER / temp_filename
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        print(f"Processing video: {temp_filename} (Language: {language})")
+        
+        # Get video info
+        video_info = video_processor.get_video_info(str(temp_path))
+        
+        # Extract and analyze frames
+        frames = video_processor.extract_frames(
+            str(temp_path),
+            max_frames=config.MAX_FRAMES_TO_ANALYZE
+        )
+        detection_result = detector.analyze_video(frames)
+        
+        # Try to extract audio
+        has_audio = audio_extractor.check_has_audio(str(temp_path))
+        audio_result = None
+        audio_info_dict = {}
+        
+        if has_audio:
+            try:
+                audio_result = audio_extractor.extract_audio(str(temp_path))
+                if audio_result['success']:
+                    audio_info_dict = audio_extractor.get_audio_info(audio_result['audio_path'])
+            except Exception as audio_error:
+                print(f"⚠️ Audio extraction failed: {audio_error}")
+                has_audio = False
+        
+        # Clean up temp video file
+        os.remove(temp_path)
+        
+        # Format with multilingual support
+        formatted_result = multilingual_helper.format_full_response(
+            detection_result,
+            language=language,
+            include_warnings=True
+        )
+        
+        # Prepare response
+        response = {
+            "success": True,
+            "video_info": {
+                "filename": file.filename,
+                "duration_seconds": round(video_info["duration"], 2),
+                "fps": round(video_info["fps"], 2),
+                "resolution": f"{video_info['width']}x{video_info['height']}"
+            },
+            "detection_result": {
+                "is_ai_generated": formatted_result["is_ai_generated"],
+                "confidence_score": formatted_result["confidence_score"],
+                "message": formatted_result["message"],
+                "confidence_label": formatted_result["confidence_label"],
+                "warning": formatted_result.get("warning", ""),
+                "language": formatted_result["language"],
+                "language_name": formatted_result["language_name"],
+                "frames_analyzed": detection_result["frames_analyzed"]
+            },
+            "audio_info": {
+                "has_audio": has_audio,
+                "extracted": audio_result['success'] if audio_result else False,
+                "message": audio_result['message'] if audio_result else "No audio track in video"
+            },
+            "detailed_analysis": {
+                "avg_fake_probability": detection_result["avg_fake_probability"],
+                "avg_real_probability": detection_result["avg_real_probability"]
+            }
+        }
+        
+        # Add audio details if extraction was successful
+        if has_audio and audio_result and audio_result['success']:
+            response["audio_info"].update({
+                "filename": Path(audio_result['audio_path']).name,
+                "duration_seconds": round(audio_info_dict.get("duration", 0), 2),
+                "sample_rate": audio_info_dict.get("sample_rate", 0),
+                "size_mb": round(audio_info_dict.get("size_mb", 0), 2)
+            })
+        
+        return JSONResponse(content=response)
+    
+    except Exception as e:
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Add similar updates for image and document endpoints
+@app.post("/api/detect-image")
+async def detect_image(file: UploadFile = File(...), language: str = 'en'):
+    """Detect if an uploaded image is AI-generated with multilingual support"""
+    try:
+        file_ext = Path(file.filename).suffix.lower()
+        allowed_image_formats = ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
+        
+        if file_ext not in allowed_image_formats:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_image_formats)}"
+            )
+        
+        timestamp = int(time.time())
+        temp_filename = f"image_{timestamp}{file_ext}"
+        temp_path = config.UPLOAD_FOLDER / temp_filename
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        print(f"Processing image: {temp_filename} (Language: {language})")
+        
+        # Analyze image
+        detection_result = detector.analyze_image(str(temp_path))
+        
+        # Get image info
+        from PIL import Image
+        with Image.open(temp_path) as img:
+            width, height = img.size
+            format_name = img.format
+            file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
+        
+        os.remove(temp_path)
+        
+        # Format with multilingual support
+        formatted_result = multilingual_helper.format_full_response(
+            detection_result,
+            language=language,
+            include_warnings=True
+        )
+        
+        response = {
+            "success": True,
+            "image_info": {
+                "filename": file.filename,
+                "resolution": f"{width}x{height}",
+                "format": format_name,
+                "size_mb": round(file_size_mb, 2)
+            },
+            "detection_result": {
+                "is_ai_generated": formatted_result["is_ai_generated"],
+                "confidence_score": formatted_result["confidence_score"],
+                "message": formatted_result["message"],
+                "confidence_label": formatted_result["confidence_label"],
+                "warning": formatted_result.get("warning", ""),
+                "language": formatted_result["language"],
+                "language_name": formatted_result["language_name"],
+                "analysis_type": detection_result["analysis_type"]
+            },
+            "detailed_analysis": {
+                "fake_probability": detection_result["fake_probability"],
+                "real_probability": detection_result["real_probability"]
+            }
+        }
+        
+        return JSONResponse(content=response)
+    
+    except Exception as e:
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        print(f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/detect-document")
+async def detect_document(file: UploadFile = File(...), language: str = 'en'):
+    """Detect AI-generated text from uploaded document with multilingual support"""
+    try:
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in ['.pdf', '.docx', '.doc', '.txt']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: .pdf, .docx, .txt"
+            )
+        
+        timestamp = int(time.time())
+        temp_filename = f"document_{timestamp}{file_ext}"
+        temp_path = config.UPLOAD_FOLDER / temp_filename
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        print(f"Processing document: {temp_filename} (Language: {language})")
+        
+        # Extract text
+        extraction_result = document_processor.extract_text(str(temp_path))
+        
+        if not extraction_result['success']:
+            os.remove(temp_path)
+            raise HTTPException(
+                status_code=400,
+                detail=extraction_result.get('message', 'Failed to extract text')
+            )
+        
+        # Chunk text for analysis
+        text_chunks = document_processor.chunk_text(extraction_result['text'])
+        
+        # Analyze with AI detector
+        detection_result = text_detector.analyze_document(text_chunks)
+        
+        os.remove(temp_path)
+        
+        # Format with multilingual support
+        formatted_result = multilingual_helper.format_full_response(
+            detection_result,
+            language=language,
+            include_warnings=True
+        )
+        
+        response = {
+            "success": True,
+            "document_info": {
+                "filename": file.filename,
+                "file_type": file_ext,
+                "word_count": extraction_result['word_count'],
+                "character_count": extraction_result['character_count'],
+                "sentence_count": extraction_result['sentence_count']
+            },
+            "detection_result": {
+                "is_ai_generated": formatted_result["is_ai_generated"],
+                "confidence_score": formatted_result["confidence_score"],
+                "message": formatted_result["message"],
+                "confidence_label": formatted_result["confidence_label"],
+                "warning": formatted_result.get("warning", ""),
+                "language": formatted_result["language"],
+                "language_name": formatted_result["language_name"],
                 "chunks_analyzed": detection_result["chunks_analyzed"]
             },
             "detailed_analysis": {
