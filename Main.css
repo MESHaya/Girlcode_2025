@@ -50,6 +50,12 @@ button, input, textarea, .icon {
     background: var(--color-header-bg);
     box-shadow: 0 1px 4px rgba(0,0,0,0.05);
 }
+.brand-title,
+.brand-sub,
+.progress-bar-placeholder {
+    text-align: center;
+    width: 100%;
+}
 
 .header-left, .header-right {
     flex-basis: 15%; 
