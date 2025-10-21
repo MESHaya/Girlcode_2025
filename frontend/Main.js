@@ -1,10 +1,9 @@
+
 // ============================================
 // MAIN.JS - Backend API Integration
-// ============================================
 
 // Configuration
 const API_BASE_URL = 'http://127.0.0.1:8000';  // Your FastAPI backend URL
-
 // Language mapping
 const LANGUAGE_MAP = {
     'English': 'en',
@@ -13,18 +12,15 @@ const LANGUAGE_MAP = {
     'Sesotho': 'st',
     'Afrikaans': 'af'
 };
-
 let currentLanguage = 'en';
 let currentFile = null;
 let currentTab = 'video';
-
 // ============================================
 // 1. INITIALIZATION
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
     initializeApp();
 });
-
 function initializeApp() {
     // Get main elements
     const uploader = document.getElementById('uploader');
@@ -34,11 +30,9 @@ function initializeApp() {
     const fileInput = document.getElementById('fileInput');
     const fileNameDisplay = document.getElementById('fileName');
     const dropArea = document.getElementById('dropArea');
-
     // Initial state
     uploader.classList.add('active');
     results.classList.remove('active');
-
     // Initialize all features
     initLanguageDropdown();
     initTabs();
@@ -47,7 +41,6 @@ function initializeApp() {
     
     console.log('✅ Frontend initialized and connected to backend at:', API_BASE_URL);
 }
-
 // ============================================
 // 2. PAGE TRANSLATION FUNCTIONS (Define early)
 // ============================================
@@ -63,7 +56,6 @@ async function translatePage(language) {
         console.error('Translation error:', error);
     }
 }
-
 function translateUIElements(language) {
     // Complete translations for all supported languages
     const allTranslations = {
@@ -162,6 +154,13 @@ function translateUIElements(language) {
         textTab.innerHTML = `<span class="icon">📄</span> ${trans.tabText}`;
         console.log('✓ Translated text tab');
     }
+       // 6. Translate "How to Spot AI" content
+  const acc2 = document.querySelector('.acc-body show');
+    if (acc2) {
+        acc2.textContent = trans.acc2;
+        console.log('✓ Translated acc2Body description');
+    }
+    
     
     const imageTab = document.querySelector('[data-tab="image"]');
     if (imageTab) {
@@ -236,30 +235,25 @@ function translateUIElements(language) {
     
     console.log('🎉 All UI elements translated!');
 }
-
 // ============================================
 // 3. LANGUAGE DROPDOWN
 // ============================================
 function initLanguageDropdown() {
     const langBtn = document.getElementById('langBtn');
     const langMenu = document.getElementById('langMenu');
-
     langMenu.style.display = 'none';
-
     langBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const isHidden = langMenu.style.display === 'none';
         langMenu.style.display = isHidden ? 'block' : 'none';
         langMenu.setAttribute('aria-hidden', isHidden ? 'false' : 'true');
     });
-
     document.addEventListener('click', (e) => {
         if (!langMenu.contains(e.target) && e.target !== langBtn) {
             langMenu.style.display = 'none';
             langMenu.setAttribute('aria-hidden', 'true');
         }
     });
-
     langMenu.querySelectorAll('.lang-item').forEach(item => {
         item.addEventListener('click', async () => {
             const selectedLang = item.textContent;
@@ -276,7 +270,6 @@ function initLanguageDropdown() {
         });
     });
 }
-
 // ============================================
 // 4. TABS (Text, Image, Video)
 // ============================================
@@ -304,7 +297,6 @@ function initTabs() {
         });
     });
 }
-
 // ============================================
 // 5. FILE UPLOAD
 // ============================================
@@ -316,7 +308,6 @@ function initFileUpload() {
     const checkBtn = document.getElementById('checkBtn');
     const uploader = document.getElementById('uploader');
     const results = document.getElementById('results');
-
     // File input change
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -337,7 +328,6 @@ function initFileUpload() {
             console.log('File selected:', file.name, `(${(file.size / 1024 / 1024).toFixed(2)} MB)`);
         }
     });
-
     // Clear button
     clearBtn.addEventListener('click', () => {
         fileInput.value = '';
@@ -347,14 +337,79 @@ function initFileUpload() {
         results.classList.remove('active');
         console.log('File cleared');
     });
-
+// Add this new function after the clearBtn event listener (around line 360)
+// New "Check Another" button handler
+function initCheckAnotherButton() {
+    const checkAnotherBtn = document.getElementById('checkAnotherBtn');
+    
+    if (checkAnotherBtn) {
+        checkAnotherBtn.addEventListener('click', () => {
+            resetToUploader();
+        });
+    }
+}
+// New reset function
+function resetToUploader() {
+    const fileInput = document.getElementById('fileInput');
+    const fileNameDisplay = document.getElementById('fileName');
+    const uploader = document.getElementById('uploader');
+    const results = document.getElementById('results');
+    const dropArea = document.getElementById('dropArea');
+    
+    // Clear file
+    fileInput.value = '';
+    currentFile = null;
+    fileNameDisplay.textContent = 'No file selected';
+    
+    // Reset file icon based on current tab
+    const fileIcon = dropArea.querySelector('.file-icon .icon');
+    if (currentTab === 'video') {
+        fileIcon.textContent = '📹';
+    } else if (currentTab === 'image') {
+        fileIcon.textContent = '🖼️';
+    } else {
+        fileIcon.textContent = '📄';
+    }
+    
+    // Switch back to uploader view
+    results.classList.remove('active');
+    uploader.classList.add('active');
+    
+    console.log('Reset to uploader view');
+}
+// Update the initializeApp function to include the new button
+function initializeApp() {
+    // Get main elements
+    const uploader = document.getElementById('uploader');
+    const results = document.getElementById('results');
+    const checkBtn = document.getElementById('checkBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const fileInput = document.getElementById('fileInput');
+    const fileNameDisplay = document.getElementById('fileName');
+    const dropArea = document.getElementById('dropArea');
+    // Initial state
+    uploader.classList.add('active');
+    results.classList.remove('active');
+    // Initialize all features
+    initLanguageDropdown();
+    initTabs();
+    initFileUpload();
+    initAccordions();
+    initCheckAnotherButton(); // ADD THIS LINE
+    
+    console.log('✅ Frontend initialized and connected to backend at:', API_BASE_URL);
+}
+// Also update the Clear button to use the same reset function
+// Find the clearBtn event listener and replace it with:
+clearBtn.addEventListener('click', () => {
+    resetToUploader();
+});
     // Check Content button - MAIN DETECTION
     checkBtn.addEventListener('click', async () => {
         if (!currentFile) {
             alert('Please select a file first!');
             return;
         }
-
         // Show loading state
         checkBtn.disabled = true;
         checkBtn.textContent = 'Analyzing...';
@@ -386,17 +441,14 @@ function initFileUpload() {
             checkBtn.textContent = 'Check Content';
         }
     });
-
     // Drag and drop
     dropArea.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropArea.style.borderColor = '#A5556E';
     });
-
     dropArea.addEventListener('dragleave', () => {
         dropArea.style.borderColor = '#E5A8B8';
     });
-
     dropArea.addEventListener('drop', (e) => {
         e.preventDefault();
         dropArea.style.borderColor = '#E5A8B8';
@@ -408,26 +460,21 @@ function initFileUpload() {
         }
     });
 }
-
 // ============================================
 // 6. API CALLS - VIDEO DETECTION
 // ============================================
 async function analyzeVideo(file) {
     const formData = new FormData();
     formData.append('file', file);
-
     console.log('📹 Analyzing video:', file.name, '(Language:', currentLanguage, ')');
-
     // Use correct endpoint with language parameter
     const response = await fetch(`${API_BASE_URL}/api/detect-with-audio?language=${currentLanguage}`, {
         method: 'POST',
         body: formData
     });
-
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
-
     const data = await response.json();
     console.log('Video analysis result:', data);
     
@@ -442,25 +489,20 @@ async function analyzeVideo(file) {
         hasAudio: data.audio_info?.has_audio || false
     };
 }
-
 // ============================================
 // 7. API CALLS - IMAGE DETECTION
 // ============================================
 async function analyzeImage(file) {
     const formData = new FormData();
     formData.append('file', file);
-
     console.log('🖼️ Analyzing image:', file.name, '(Language:', currentLanguage, ')');
-
     const response = await fetch(`${API_BASE_URL}/api/detect-image?language=${currentLanguage}`, {
         method: 'POST',
         body: formData
     });
-
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
-
     const data = await response.json();
     console.log('Image analysis result:', data);
     
@@ -480,18 +522,14 @@ async function analyzeImage(file) {
 async function analyzeDocument(file) {
     const formData = new FormData();
     formData.append('file', file);
-
     console.log('📄 Analyzing document:', file.name, '(Language:', currentLanguage, ')');
-
     const response = await fetch(`${API_BASE_URL}/api/detect-document?language=${currentLanguage}`, {
         method: 'POST',
         body: formData
     });
-
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
-
     const data = await response.json();
     console.log('Document analysis result:', data);
     
@@ -505,7 +543,6 @@ async function analyzeDocument(file) {
         details: data.document_info
     };
 }
-
 // ============================================
 // 9. DISPLAY RESULTS
 // ============================================
@@ -516,13 +553,11 @@ function displayResults(result) {
     const confidenceBadge = document.getElementById('confidenceBadge');
     const progressFill = document.getElementById('progressFill');
     const resultCard = document.getElementById('resultCard');
-
     const isAI = result.isAI;
     const confidence = Math.round(result.confidence);
     const customMessage = result.message;
     const warning = result.warning;
     const confidenceLabel = result.confidenceLabel || 'Confidence';
-
     // Update icon and styling
     if (isAI) {
         // AI-Generated
@@ -575,26 +610,33 @@ function displayResults(result) {
             }
         }
     }
-
     // Animate progress bar
     progressFill.style.width = '0%';
     setTimeout(() => {
         progressFill.style.width = confidence + '%';
     }, 100);
-
     // Update accordion content based on result
     updateAccordionContent(isAI, result.type);
-
     console.log('✅ Results displayed:', isAI ? 'AI-Generated' : 'Human-Created', `(${confidence}%)`, 'Language:', currentLanguage);
 }
-
+// Initialize "Check Another" button
+function initCheckAnotherButton() {
+    const checkAnotherBtn = document.getElementById('checkAnotherBtn');
+    if (checkAnotherBtn) {
+        checkAnotherBtn.addEventListener('click', () => {
+            resetToUploader();
+        });
+        console.log('✓ "Check Another" button initialized');
+    } else {
+        console.warn('⚠️ "Check Another" button not found in DOM');
+    }
+}
 // ============================================
 // 10. UPDATE ACCORDION CONTENT
 // ============================================
 function updateAccordionContent(isAI, contentType) {
     const acc1Body = document.querySelector('#acc1 .acc-body ul');
     const acc2Body = document.querySelector('#acc2 .acc-body ul');
-
     // Update "What You Can Do" section
     if (isAI) {
         acc1Body.innerHTML = `
@@ -610,10 +652,8 @@ function updateAccordionContent(isAI, contentType) {
             <li>Consider the context and timing of the content</li>
         `;
     }
-
     // Keep "How to Spot AI Content" section the same (educational)
 }
-
 // ============================================
 // 11. ACCORDION FUNCTIONALITY
 // ============================================
@@ -629,14 +669,12 @@ function initAccordions() {
         };
         
         updateSymbol();
-
         header.addEventListener('click', () => {
             body.classList.toggle('show');
             updateSymbol();
         });
     });
 }
-
 // ============================================
 // 11. HEALTH CHECK (Optional - for testing)
 // ============================================
@@ -651,6 +689,5 @@ async function checkBackendHealth() {
         return null;
     }
 }
-
 // Check backend on load
 checkBackendHealth();
